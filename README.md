@@ -30,14 +30,7 @@ Campos requeridos:
   "origen": "JFK",
   "destino": "LAX",
   "fecha_partida": "2025-03-15T14:30:00",
-  "distancia_km": 3983
-}
-```
-
-Campos opcionales (si no se envían se usan valores por defecto):
-
-```json
-{
+  "distancia_km": 3983,
   "temp": 21.5,
   "wind_spd": 4.2,
   "precip_1h": 0.0,

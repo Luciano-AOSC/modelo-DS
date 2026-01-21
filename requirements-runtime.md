@@ -1,0 +1,11 @@
+```txt
+fastapi==0.115.2
+uvicorn==0.32.0
+pandas==2.3.3
+numpy==2.4.0
+scikit-learn==1.8.0
+scipy==1.16.3
+joblib==1.5.3
+xgboost==2.1.4
+lightgbm==4.5.0
+```
