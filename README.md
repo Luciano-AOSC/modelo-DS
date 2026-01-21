@@ -6,13 +6,11 @@ Se agregó una API HTTP para consumir el modelo entrenado, organizada con esquem
 
 ### Ejecutar la API
 
-1. Instalar dependencias:
+1. Instalar dependencias de la API:
 
 ```bash
-pip install -r requirements-runtime.md
+pip install -r requirements-api.txt
 ```
-
-Si tu herramienta no acepta `.txt`, podés dejarlo como `.md` y luego cambiarle la extensión a `.txt`.
 
 2. Ejecutar el servidor (desde la raíz del repo):
 
