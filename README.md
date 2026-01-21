@@ -12,8 +12,6 @@ Se agregó una API HTTP para consumir el modelo entrenado, organizada con esquem
 pip install -r requirements-runtime.md
 ```
 
-Si tu herramienta no acepta `.txt`, podés dejarlo como `.md` y luego cambiarle la extensión a `.txt`.
-
 2. Ejecutar el servidor (desde la raíz del repo):
 
 ```bash
