@@ -1,215 +1,202 @@
 """
-FlightOnTime - Configuración del Proyecto
-==========================================
-Archivo de configuración central con rutas y parámetros reproducibles.
-Actualizado: 2026-01-13
+Configuración global del proyecto.
+
+Define constantes, parámetros del modelo y paths.
 """
 
-from pathlib import Path
 import os
+from pathlib import Path
 
-# =============================================================================
-# RUTAS DEL PROYECTO
-# =============================================================================
+# ============================================================================
+# PATHS
+# ============================================================================
 
-# Raíz del proyecto
+# Root del proyecto
 PROJECT_ROOT = Path(__file__).parent.parent
 
-# Directorios principales
-DATA_DIR = PROJECT_ROOT / "data"
-DATASET_ORIGINAL_DIR = PROJECT_ROOT / "0.0. DATASET ORIGINAL"
-NOTEBOOKS_DIR = PROJECT_ROOT / "notebooks"
-SRC_DIR = PROJECT_ROOT / "src"
-MODELS_DIR = PROJECT_ROOT / "models"
-OUTPUTS_DIR = PROJECT_ROOT / "outputs"
-FIGURES_DIR = OUTPUTS_DIR / "figures"
-METRICS_DIR = OUTPUTS_DIR / "metrics"
+# Directorios de datos
+DATA_DIR = PROJECT_ROOT / 'data'
+RAW_DATA_DIR = DATA_DIR / 'raw'
+PROCESSED_DATA_DIR = DATA_DIR / 'processed'
 
-# Archivos específicos
-DATASET_PATH = DATASET_ORIGINAL_DIR / "dataset_prepared.parquet"
-MODEL_PATH = MODELS_DIR / "model.joblib"
-METADATA_PATH = MODELS_DIR / "metadata.json"
-FEATURE_ENGINEER_PATH = MODELS_DIR / "feature_engineer.joblib"
+# Directorios de salida
+MODELS_DIR = PROJECT_ROOT / 'models'
+OUTPUTS_DIR = PROJECT_ROOT / 'outputs'
+FIGURES_DIR = OUTPUTS_DIR / 'figures'
+METRICS_DIR = OUTPUTS_DIR / 'metrics'
 
-# =============================================================================
-# CONFIGURACIÓN DEL MODELO
-# =============================================================================
+# Asegurar que existen los directorios
+for directory in [RAW_DATA_DIR, PROCESSED_DATA_DIR, MODELS_DIR, FIGURES_DIR, METRICS_DIR]:
+    directory.mkdir(parents=True, exist_ok=True)
 
-# Semilla para reproducibilidad
-RANDOM_STATE = 42
+# ============================================================================
+# DATASET
+# ============================================================================
 
-# División de datos
-TEST_SIZE = 0.2
-VALIDATION_SIZE = 0.1
+# Archivo de entrada
+RAW_DATA_FILE = 'flights_with_weather_complete.parquet'
+RAW_DATA_PATH = RAW_DATA_DIR / RAW_DATA_FILE
 
-# Umbral de decisión optimizado
-DECISION_THRESHOLD = 0.5591  # Optimizado durante entrenamiento (dataset completo)
+# Archivos procesados
+TRAIN_DATA_FILE = 'train.parquet'
+TEST_DATA_FILE = 'test.parquet'
+TRAIN_DATA_PATH = PROCESSED_DATA_DIR / TRAIN_DATA_FILE
+TEST_DATA_PATH = PROCESSED_DATA_DIR / TEST_DATA_FILE
 
-# =============================================================================
-# FEATURES DEL MODELO - SEGÚN ESPECIFICACIÓN
-# =============================================================================
+# ============================================================================
+# MODELO
+# ============================================================================
 
-# --------- FEATURES TEMPORALES ---------
-TEMPORAL_FEATURES = [
-    'year',               # Patrones 2020-2024 (cambios estructurales)
-    'month',              # Mes del año (1-12)
-    'day_of_week',        # Día de la semana (1-7)
-    'day_of_month',       # Día del mes (1-31) - opcional
-    'dep_hour',           # Hora de salida (0-23) - interpretable
-    'sched_minute_of_day', # Minuto del día (0-1439) - granular
+# Target
+TARGET_COLUMN = 'is_delayed'
+DELAY_THRESHOLD = 15  # minutos
+
+# Features a eliminar (alta proporción de nulos)
+COLS_TO_DROP = [
+    'dest_weather_wdir',
+    'origin_weather_wdir',
+    'dest_weather_wpgt',
+    'origin_weather_wpgt',
+    'origin_weather_tsun',
+    'dest_weather_tsun',
+    'cancellation_code'
 ]
 
-# --------- FEATURES DE OPERACIÓN (Categóricas) ---------
-OPERATION_FEATURES = [
-    'op_unique_carrier',  # Código de aerolínea
-    'origin',             # Aeropuerto origen (IATA)
-    'dest',               # Aeropuerto destino (IATA)
+# Features numéricas
+NUMERIC_FEATURES = [
+    'distance',
+    'crs_elapsed_time',
+    'month',
+    'day_of_week',
+    'day_of_month',
+    'quarter',
+    'is_weekend',
+    'hour',
+    'hour_sin',
+    'hour_cos',
+    'origin_weather_tavg',
+    'origin_weather_prcp',
+    'origin_weather_wspd',
+    'origin_weather_pres',
+    'dest_weather_tavg',
+    'dest_weather_prcp',
+    'dest_weather_wspd',
+    'dest_weather_pres',
+    'temp_diff',
+    'prcp_diff'
 ]
 
-# --------- FEATURES DE DISTANCIA ---------
-DISTANCE_FEATURES = [
-    'distance',           # Distancia del vuelo (millas) - numérica continua
+# Features categóricas
+CATEGORICAL_FEATURES = [
+    'op_unique_carrier',
+    'origin',
+    'dest',
+    'time_of_day',
+    'distance_category'
 ]
 
-# --------- FEATURES DE CLIMA ---------
+# Features climáticas para imputación
 CLIMATE_FEATURES = [
-    'temp',               # Temperatura
-    'wind_spd',           # Velocidad del viento
-    'precip_1h',          # Precipitación última hora (-1 → 0)
-    'climate_severity_idx', # Índice de severidad climática
-    'dist_met_km',        # Distancia a estación meteorológica (confianza)
+    'origin_weather_tavg',
+    'origin_weather_tmin',
+    'origin_weather_tmax',
+    'origin_weather_prcp',
+    'origin_weather_snow',
+    'origin_weather_wspd',
+    'origin_weather_pres',
+    'dest_weather_tavg',
+    'dest_weather_tmin',
+    'dest_weather_tmax',
+    'dest_weather_prcp',
+    'dest_weather_snow',
+    'dest_weather_wspd',
+    'dest_weather_pres'
 ]
 
-# --------- FEATURES GEOGRÁFICAS ---------
-GEO_FEATURES = [
-    'latitude',           # Latitud del aeropuerto
-    'longitude',          # Longitud del aeropuerto
+# Columnas críticas (no pueden tener nulos)
+CRITICAL_COLUMNS = [
+    'arr_delay',
+    'dep_delay',
+    'distance',
+    'crs_elapsed_time'
 ]
 
-# Lista completa de features numéricas
-NUMERIC_FEATURES = TEMPORAL_FEATURES + DISTANCE_FEATURES + CLIMATE_FEATURES + GEO_FEATURES
+# ============================================================================
+# ENTRENAMIENTO
+# ============================================================================
 
-# Features categóricas (serán codificadas)
-CATEGORICAL_FEATURES = OPERATION_FEATURES
+# Sampling
+SAMPLE_SIZE = 500000  # Número de registros para entrenar (None = todos)
+RANDOM_STATE = 2024
 
-# Features encoded (después de LabelEncoder)
-ENCODED_FEATURES = [f"{col}_encoded" for col in CATEGORICAL_FEATURES]
+# Split
+TEST_SIZE = 0.2  # 80% train, 20% test
+STRATIFY = True  # Estratificar por target
 
-# TODAS las features del modelo
-ALL_FEATURES = NUMERIC_FEATURES + ENCODED_FEATURES
+# Modelo
+MODEL_TYPE = 'xgboost'
 
-# =============================================================================
-# FEATURES EXCLUIDAS (EVITAR LEAKAGE)
-# =============================================================================
-
-EXCLUDED_FEATURES = [
-    'DEP_DEL15',          # Target - variable objetivo
-    'DEP_DELAY',          # Contiene la respuesta en minutos (leakage)
-    'STATION_KEY',        # Llave técnica, no aporta valor
-    'FL_DATE',            # Alta cardinalidad, usar componentes separados
-    'ORIGIN_CITY_NAME',   # Redundante con origin
-    'DEST_CITY_NAME',     # Redundante con dest
-]
-
-# =============================================================================
-# VARIABLE OBJETIVO
-# =============================================================================
-
-TARGET_COLUMN = 'is_delayed'  # 0 = Puntual, 1 = Retrasado
-
-# Definición de retraso (en minutos)
-DELAY_THRESHOLD_MINUTES = 15  # Vuelo se considera retrasado si >= 15 min
-
-# =============================================================================
-# CONTRATO DE INTEGRACIÓN CON BACKEND
-# =============================================================================
-
-# Mapeo de predicción a texto
-PREDICTION_LABELS = {
-    0: "Puntual",
-    1: "Retrasado"
+# XGBoost con scale_pos_weight (mejor modelo según experimentación)
+XGBOOST_PARAMS = {
+    'max_depth': 10,
+    'learning_rate': 0.1,
+    'n_estimators': 100,
+    'random_state': RANDOM_STATE,
+    'eval_metric': 'logloss',
+    'n_jobs': -1
 }
 
-# Campos de entrada del API
-API_INPUT_FIELDS = {
-    'aerolinea': 'op_unique_carrier',
-    'origen': 'origin',
-    'destino': 'dest',
-    'fecha_partida': None,  # Se parsea a múltiples campos
-    'distancia_km': 'distance',
+# Calcular scale_pos_weight automáticamente basado en desbalance
+# scale_pos_weight = (n_negatives / n_positives)
+USE_SCALE_POS_WEIGHT = True
+
+# ============================================================================
+# PREDICCIÓN
+# ============================================================================
+
+# Threshold de clasificación
+# 0.50 = default, 0.25 = optimizado para recall
+CLASSIFICATION_THRESHOLD = 0.25
+
+# Thresholds recomendados por stakeholder
+THRESHOLDS = {
+    'airlines': 0.25,     # Balance precision-recall
+    'airports': 0.30,     # Priorizar precision
+    'passengers': 0.20    # Priorizar recall
 }
 
-# =============================================================================
-# CONFIGURACIÓN DE MODELOS A COMPARAR
-# =============================================================================
+# ============================================================================
+# ARCHIVOS DEL MODELO
+# ============================================================================
 
-MODELS_CONFIG = {
-    'LogisticRegression': {
-        'params': {
-            'random_state': RANDOM_STATE,
-            'max_iter': 1000,
-            'class_weight': 'balanced'
-        }
-    },
-    'RandomForest': {
-        'params': {
-            'random_state': RANDOM_STATE,
-            'n_estimators': 100,
-            'max_depth': 10,
-            'class_weight': 'balanced',
-            'n_jobs': -1
-        }
-    },
-    'XGBoost': {
-        'params': {
-            'random_state': RANDOM_STATE,
-            'n_estimators': 100,
-            'max_depth': 6,
-            'learning_rate': 0.1,
-            'scale_pos_weight': 4.3,  # Ratio de desbalance ~4.3:1
-            'n_jobs': -1,
-            'eval_metric': 'logloss'
-        }
-    },
-    'LightGBM': {
-        'params': {
-            'random_state': RANDOM_STATE,
-            'n_estimators': 100,
-            'max_depth': 6,
-            'learning_rate': 0.1,
-            'class_weight': 'balanced',
-            'n_jobs': -1,
-            'verbose': -1
-        }
-    }
-}
+MODEL_FILE = 'model.joblib'
+SCALER_FILE = 'scaler.pkl'
+ENCODERS_FILE = 'label_encoders.pkl'
+METADATA_FILE = 'metadata.json'
 
-# =============================================================================
-# MÉTRICAS DE EVALUACIÓN
-# =============================================================================
+MODEL_PATH = MODELS_DIR / MODEL_FILE
+SCALER_PATH = MODELS_DIR / SCALER_FILE
+ENCODERS_PATH = MODELS_DIR / ENCODERS_FILE
+METADATA_PATH = MODELS_DIR / METADATA_FILE
 
-# Métrica principal para selección de modelo
-PRIMARY_METRIC = 'f1'
+# ============================================================================
+# VISUALIZACIÓN
+# ============================================================================
 
-# Métricas secundarias a reportar
-SECONDARY_METRICS = ['accuracy', 'precision', 'recall', 'roc_auc', 'pr_auc']
+# Tamaño de figuras
+FIGURE_SIZE = (10, 6)
+LARGE_FIGURE_SIZE = (14, 10)
 
-# Objetivos mínimos
-MIN_RECALL_TARGET = 0.40    # Detectar al menos 40% de retrasos
-MIN_PRECISION_TARGET = 0.35 # Al menos 35% de alertas correctas
+# Estilo
+PLOT_STYLE = 'seaborn-v0_8-darkgrid'
 
-# =============================================================================
-# RESULTADOS ACTUALES DEL MODELO (XGBoost)
-# =============================================================================
+# DPI para guardar figuras
+DPI = 100
 
-CURRENT_MODEL_METRICS = {
-    'model_name': 'XGBoost',
-    'accuracy': 0.7232,
-    'precision': 0.3501,
-    'recall': 0.5430,
-    'f1': 0.4257,
-    'roc_auc': 0.7194,
-    'pr_auc': 0.3874,
-    'threshold': 0.5591,
-    'total_features': 17,
-}
+# ============================================================================
+# LOGGING
+# ============================================================================
+
+LOG_LEVEL = 'INFO'
+LOG_FORMAT = '[%(asctime)s] %(levelname)s - %(message)s'
+DATE_FORMAT = '%Y-%m-%d %H:%M:%S'

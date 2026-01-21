@@ -1,31 +1,49 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+"""
+Controladores (routes) de la API.
+"""
+
+from typing import Dict
+
+import pandas as pd
+from fastapi import APIRouter
 
 from .schemas import PredictionRequest, PredictionResponse
-from .service import PredictionService
+from .service import predict_from_payload
+from .. import config
 
 router = APIRouter()
 
 
-def get_service(request: Request) -> PredictionService:
-    return request.app.state.prediction_service
-
-
+# Retorna Dict[str, str]: clave "status" y valor "ok".
 @router.get("/health")
-def health_check() -> dict:
+def health_check() -> Dict[str, str]:
+    """
+    Endpoint simple para chequear salud del servicio.
+
+    Retorna:
+        {"status": "ok"}
+    """
     return {"status": "ok"}
 
 
+# Entrada: PredictionRequest (un vuelo).
+# Salida: PredictionResponse con predicción, probabilidad y threshold.
 @router.post("/predict", response_model=PredictionResponse)
-def predict(
-    request: PredictionRequest,
-    service: PredictionService = Depends(get_service),
-) -> PredictionResponse:
-    try:
-        return service.predict(request)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail={"error": "Faltan columnas requeridas", "details": str(exc)},
-        ) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+def predict(request: PredictionRequest) -> PredictionResponse:
+    """
+    Recibe un vuelo y devuelve la predicción.
+
+    Args:
+        request: payload con un vuelo.
+
+    Returns:
+        PredictionResponse con predicción, probabilidad y threshold.
+    """
+    df = pd.DataFrame([request.flight.model_dump()])
+    prediction, probability = predict_from_payload(df)
+
+    return PredictionResponse(
+        prediction=prediction,
+        probability=probability,
+        threshold=config.CLASSIFICATION_THRESHOLD,
+    )
