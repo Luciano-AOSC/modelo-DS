@@ -26,7 +26,7 @@ def health_check() -> Dict[str, str]:
 
 
 # Entrada: PredictionRequest (un vuelo).
-# Salida: PredictionResponse con predicción, probabilidad y threshold.
+# Salida: PredictionResponse con predicción y probabilidad.
 @router.post("/predict", response_model=PredictionResponse)
 def predict(request: PredictionRequest) -> PredictionResponse:
     """
@@ -36,7 +36,7 @@ def predict(request: PredictionRequest) -> PredictionResponse:
         request: payload con un vuelo.
 
     Returns:
-        PredictionResponse con predicción, probabilidad y threshold.
+        PredictionResponse con predicción y probabilidad.
     """
     df = pd.DataFrame([request.flight.model_dump()])
     prediction, probability, threshold = predict_from_payload(df)
@@ -44,5 +44,4 @@ def predict(request: PredictionRequest) -> PredictionResponse:
     return PredictionResponse(
         prediction=prediction,
         probability=probability,
-        threshold=threshold,
     )

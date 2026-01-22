@@ -48,12 +48,17 @@ Campos requeridos:
 }
 ```
 
+Notas:
+
+- Si no se envían valores climáticos/geográficos, se usan defaults: `temp=20.0`,
+  `wind_spd=5.0`, `precip_1h=0.0`, `climate_severity_idx=0.0`, `dist_met_km=10.0`,
+  `latitude=40.0`, `longitude=-74.0`.
+
 Respuesta:
 
 ```json
 {
   "prediction": 0,
-  "probability": 0.12,
-  "threshold": 0.5591
+  "probability": 0.12
 }
 ```

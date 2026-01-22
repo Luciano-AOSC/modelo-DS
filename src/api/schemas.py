@@ -25,15 +25,36 @@ class FlightPayload(BaseModel):
 
     # Distancia y clima
     distance: float = Field(..., description="Distancia del vuelo en millas.")
-    temp: float = Field(..., description="Temperatura (°C).")
-    wind_spd: float = Field(..., description="Velocidad del viento (km/h).")
-    precip_1h: float = Field(..., description="Precipitación última hora (mm).")
-    climate_severity_idx: float = Field(..., description="Índice de severidad climática.")
-    dist_met_km: float = Field(..., description="Distancia a estación meteorológica (km).")
+    temp: float | None = Field(
+        20.0,
+        description="Temperatura (°C). Se asume 20.0 si no se envía.",
+    )
+    wind_spd: float | None = Field(
+        5.0,
+        description="Velocidad del viento (km/h). Se asume 5.0 si no se envía.",
+    )
+    precip_1h: float | None = Field(
+        0.0,
+        description="Precipitación última hora (mm). Se asume 0.0 si no se envía.",
+    )
+    climate_severity_idx: float | None = Field(
+        0.0,
+        description="Índice de severidad climática. Se asume 0.0 si no se envía.",
+    )
+    dist_met_km: float | None = Field(
+        10.0,
+        description="Distancia a estación meteorológica (km). Se asume 10.0 si no se envía.",
+    )
 
     # Coordenadas
-    latitude: float = Field(..., description="Latitud del aeropuerto.")
-    longitude: float = Field(..., description="Longitud del aeropuerto.")
+    latitude: float | None = Field(
+        40.0,
+        description="Latitud del aeropuerto. Se asume 40.0 si no se envía.",
+    )
+    longitude: float | None = Field(
+        -74.0,
+        description="Longitud del aeropuerto. Se asume -74.0 si no se envía.",
+    )
 
 
 class PredictionRequest(BaseModel):
@@ -51,4 +72,3 @@ class PredictionResponse(BaseModel):
 
     prediction: int
     probability: float
-    threshold: float
