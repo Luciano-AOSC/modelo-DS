@@ -9,7 +9,6 @@ from fastapi import APIRouter
 
 from .schemas import PredictionRequest, PredictionResponse
 from .service import predict_from_payload
-from .. import config
 
 router = APIRouter()
 
@@ -40,10 +39,10 @@ def predict(request: PredictionRequest) -> PredictionResponse:
         PredictionResponse con predicción, probabilidad y threshold.
     """
     df = pd.DataFrame([request.flight.model_dump()])
-    prediction, probability = predict_from_payload(df)
+    prediction, probability, threshold = predict_from_payload(df)
 
     return PredictionResponse(
         prediction=prediction,
         probability=probability,
-        threshold=config.CLASSIFICATION_THRESHOLD,
+        threshold=threshold,
     )
