@@ -72,4 +72,3 @@ class PredictionResponse(BaseModel):
 
     prediction: int
     probability: float
-    threshold: float

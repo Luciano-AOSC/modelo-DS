@@ -126,7 +126,7 @@ def sanitize_payload(df: pd.DataFrame) -> pd.DataFrame:
     return df_clean
 
 
-def predict_from_payload(df: pd.DataFrame) -> Tuple[int, float, float]:
+def predict_from_payload(df: pd.DataFrame) -> Tuple[int, float]:
     """
     Calcula predicción y probabilidad para un solo vuelo.
 
@@ -134,7 +134,7 @@ def predict_from_payload(df: pd.DataFrame) -> Tuple[int, float, float]:
         df: DataFrame con un solo vuelo.
 
     Returns:
-        (prediction, probability, threshold)
+        (prediction, probability)
     """
     df = sanitize_payload(df)
     validate_payload(df)
@@ -153,4 +153,4 @@ def predict_from_payload(df: pd.DataFrame) -> Tuple[int, float, float]:
     threshold = metadata.get("threshold", config.CLASSIFICATION_THRESHOLD)
     prediction = int(probability >= threshold)
 
-    return prediction, probability, float(threshold)
+    return prediction, probability

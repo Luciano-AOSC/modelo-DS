@@ -59,7 +59,6 @@ Respuesta:
 ```json
 {
   "prediction": 0,
-  "probability": 0.12,
-  "threshold": 0.5591
+  "probability": 0.12
 }
 ```
