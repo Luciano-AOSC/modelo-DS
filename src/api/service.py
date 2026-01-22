@@ -125,8 +125,23 @@ def sanitize_payload(df: pd.DataFrame) -> pd.DataFrame:
         df_clean["precip_1h"] = df_clean["precip_1h"].clip(lower=0)
     return df_clean
 
+    transformed = feature_engineer.transform(df)
+    if isinstance(transformed, pd.DataFrame):
+        return transformed
+    return pd.DataFrame(transformed, columns=feature_names)
 
-def predict_from_payload(df: pd.DataFrame) -> Tuple[int, float]:
+
+def sanitize_payload(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Limpia valores fuera de rango antes de generar features.
+    """
+    df_clean = df.copy()
+    if "precip_1h" in df_clean.columns:
+        df_clean["precip_1h"] = df_clean["precip_1h"].clip(lower=0)
+    return df_clean
+
+
+def predict_from_payload(df: pd.DataFrame) -> Tuple[int, float, float]:
     """
     Calcula predicción y probabilidad para un solo vuelo.
 
@@ -134,7 +149,7 @@ def predict_from_payload(df: pd.DataFrame) -> Tuple[int, float]:
         df: DataFrame con un solo vuelo.
 
     Returns:
-        (prediction, probability)
+        (prediction, probability, threshold)
     """
     df = sanitize_payload(df)
     validate_payload(df)
@@ -153,4 +168,4 @@ def predict_from_payload(df: pd.DataFrame) -> Tuple[int, float]:
     threshold = metadata.get("threshold", config.CLASSIFICATION_THRESHOLD)
     prediction = int(probability >= threshold)
 
-    return prediction, probability
+    return prediction, probability, float(threshold)
