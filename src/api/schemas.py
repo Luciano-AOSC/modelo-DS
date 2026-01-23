@@ -10,39 +10,51 @@ class FlightPayload(BaseModel):
     DTO con los datos del vuelo para la predicción.
     """
 
-    # Campos categóricos
+    # Identificadores
     op_unique_carrier: str = Field(..., description="Código de la aerolínea (ej: AA).")
-    origin: str = Field(..., description="Aeropuerto de origen (ej: JFK).")
-    dest: str = Field(..., description="Aeropuerto de destino (ej: LAX).")
+    origin: str = Field(..., description="Aeropuerto de origen (IATA).")
+    dest: str = Field(..., description="Aeropuerto de destino (IATA).")
 
-    # Campos temporales/operacionales
-    crs_dep_time: int = Field(..., description="Hora de salida programada en formato HHMM (ej: 1800).")
-    fl_date: str = Field(..., description="Fecha del vuelo en formato YYYY-MM-DD.")
-    day_of_month: int | None = Field(
-        None,
-        description="Día del mes (1-31). Si no se envía, se deriva desde fl_date."
-    )
-    day_of_week: int | None = Field(
-        None,
-        description="Día de la semana (0=Lunes, 6=Domingo). Si no se envía, se deriva desde fl_date."
-    )
+    # Variables temporales
+    year: int = Field(..., description="Año del vuelo.")
+    month: int = Field(..., description="Mes del vuelo (1-12).")
+    day_of_week: int = Field(..., description="Día de la semana (1=Lun, 7=Dom).")
+    day_of_month: int = Field(..., description="Día del mes (1-31).")
+    dep_hour: int = Field(..., description="Hora programada de salida (0-23).")
+    sched_minute_of_day: int = Field(..., description="Minuto del día (0-1439).")
+
+    # Distancia y clima
     distance: float = Field(..., description="Distancia del vuelo en millas.")
-    crs_elapsed_time: float | None = Field(
-        None,
-        description="Duración programada del vuelo en minutos. Si no se envía, se estima con la distancia."
+    temp: float | None = Field(
+        20.0,
+        description="Temperatura (°C). Se asume 20.0 si no se envía.",
+    )
+    wind_spd: float | None = Field(
+        5.0,
+        description="Velocidad del viento (km/h). Se asume 5.0 si no se envía.",
+    )
+    precip_1h: float | None = Field(
+        0.0,
+        description="Precipitación última hora (mm). Se asume 0.0 si no se envía.",
+    )
+    climate_severity_idx: float | None = Field(
+        0.0,
+        description="Índice de severidad climática. Se asume 0.0 si no se envía.",
+    )
+    dist_met_km: float | None = Field(
+        10.0,
+        description="Distancia a estación meteorológica (km). Se asume 10.0 si no se envía.",
     )
 
-    # Clima en origen
-    origin_weather_tavg: float = Field(..., description="Temperatura media en origen.")
-    origin_weather_prcp: float = Field(..., description="Precipitación en origen.")
-    origin_weather_wspd: float = Field(..., description="Velocidad del viento en origen.")
-    origin_weather_pres: float = Field(..., description="Presión atmosférica en origen.")
-
-    # Clima en destino
-    dest_weather_tavg: float = Field(..., description="Temperatura media en destino.")
-    dest_weather_prcp: float = Field(..., description="Precipitación en destino.")
-    dest_weather_wspd: float = Field(..., description="Velocidad del viento en destino.")
-    dest_weather_pres: float = Field(..., description="Presión atmosférica en destino.")
+    # Coordenadas
+    latitude: float | None = Field(
+        40.0,
+        description="Latitud del aeropuerto. Se asume 40.0 si no se envía.",
+    )
+    longitude: float | None = Field(
+        -74.0,
+        description="Longitud del aeropuerto. Se asume -74.0 si no se envía.",
+    )
 
 
 class PredictionRequest(BaseModel):
@@ -60,4 +72,3 @@ class PredictionResponse(BaseModel):
 
     prediction: int
     probability: float
-    threshold: float
