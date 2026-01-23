@@ -125,21 +125,6 @@ def sanitize_payload(df: pd.DataFrame) -> pd.DataFrame:
         df_clean["precip_1h"] = df_clean["precip_1h"].clip(lower=0)
     return df_clean
 
-    transformed = feature_engineer.transform(df)
-    if isinstance(transformed, pd.DataFrame):
-        return transformed
-    return pd.DataFrame(transformed, columns=feature_names)
-
-
-def sanitize_payload(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Limpia valores fuera de rango antes de generar features.
-    """
-    df_clean = df.copy()
-    if "precip_1h" in df_clean.columns:
-        df_clean["precip_1h"] = df_clean["precip_1h"].clip(lower=0)
-    return df_clean
-
 
 def predict_from_payload(df: pd.DataFrame) -> Tuple[int, float, float]:
     """
