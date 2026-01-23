@@ -1,261 +1,389 @@
 """
-Módulo de modelado.
-
-Incluye entrenamiento, guardado y carga del modelo.
+FlightOnTime - Modelado
+=======================
+Módulo para entrenamiento y comparación de modelos de clasificación.
 """
 
-import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler
-import xgboost as xgb
+import pandas as pd
+from typing import Dict, List, Tuple, Any, Optional
 import joblib
 import json
+from pathlib import Path
 from datetime import datetime
-from typing import Tuple, Dict, Any
-import logging
 
-from . import config
-from .preprocessing import preprocess_pipeline, split_data
-from .features import feature_engineering_pipeline, get_feature_columns, save_encoders
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score, f1_score,
+    roc_auc_score, average_precision_score, confusion_matrix,
+    precision_recall_curve, roc_curve, classification_report
+)
+import xgboost as xgb
+from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
 
-logging.basicConfig(level=config.LOG_LEVEL, format=config.LOG_FORMAT, datefmt=config.DATE_FORMAT)
-logger = logging.getLogger(__name__)
+import warnings
+warnings.filterwarnings('ignore')
 
 
-def create_model(scale_pos_weight: float = None) -> xgb.XGBClassifier:
+class FlightDelayModel:
     """
-    Crea un modelo XGBoost con los parámetros configurados.
-    
-    Args:
-        scale_pos_weight: Peso para clase positiva (si None, se calcula automáticamente)
-    
-    Returns:
-        Modelo XGBoost sin entrenar
+    Clase para entrenar y gestionar modelos de predicción de retrasos.
     """
-    params = config.XGBOOST_PARAMS.copy()
     
-    if scale_pos_weight is not None:
-        params['scale_pos_weight'] = scale_pos_weight
-        logger.info(f"Creando modelo XGBoost con scale_pos_weight={scale_pos_weight:.2f}")
-    else:
-        logger.info("Creando modelo XGBoost (sin scale_pos_weight)")
+    def __init__(self, random_state: int = 42):
+        self.random_state = random_state
+        self.models: Dict[str, Any] = {}
+        self.best_model = None
+        self.best_model_name: str = ""
+        self.best_threshold: float = 0.5
+        self.feature_names: List[str] = []
+        self.metrics_history: Dict[str, Dict] = {}
+        self.class_balance_ratio: float = 1.0
+        
+    def get_model_instances(self, class_weight_ratio: float = 1.0) -> Dict[str, Any]:
+        """
+        Retorna instancias de los modelos a comparar.
+        """
+        models = {
+            'LogisticRegression': LogisticRegression(
+                random_state=self.random_state,
+                max_iter=1000,
+                class_weight='balanced',
+                solver='lbfgs'
+            ),
+            'RandomForest': RandomForestClassifier(
+                random_state=self.random_state,
+                n_estimators=100,
+                max_depth=10,
+                class_weight='balanced',
+                n_jobs=-1
+            ),
+            'XGBoost': XGBClassifier(
+                random_state=self.random_state,
+                n_estimators=100,
+                max_depth=6,
+                learning_rate=0.1,
+                scale_pos_weight=class_weight_ratio,
+                n_jobs=-1,
+                eval_metric='logloss',
+                use_label_encoder=False
+            ),
+            'LightGBM': LGBMClassifier(
+                random_state=self.random_state,
+                n_estimators=100,
+                max_depth=6,
+                learning_rate=0.1,
+                class_weight='balanced',
+                n_jobs=-1,
+                verbose=-1
+            )
+        }
+        return models
     
-    model = xgb.XGBClassifier(**params)
+    def calculate_class_balance(self, y: np.ndarray) -> float:
+        """
+        Calcula el ratio de desbalance de clases para XGBoost.
+        """
+        neg_count = np.sum(y == 0)
+        pos_count = np.sum(y == 1)
+        return neg_count / pos_count if pos_count > 0 else 1.0
     
-    return model
+    def train_and_compare(self, X: pd.DataFrame, y: np.ndarray,
+                          test_size: float = 0.2,
+                          X_val: pd.DataFrame = None, y_val: np.ndarray = None) -> Dict[str, Dict]:
+        """
+        Entrena y compara todos los modelos.
+        
+        Args:
+            X: Features de entrenamiento
+            y: Target de entrenamiento
+            test_size: Tamaño del split de validación (ignorado si se pasa X_val/y_val)
+            X_val: Features de validación externa (opcional)
+            y_val: Target de validación externa (opcional)
+        
+        Retorna métricas de cada modelo.
+        """
+        self.feature_names = X.columns.tolist()
+        self.class_balance_ratio = self.calculate_class_balance(y)
+        
+        print(f"📊 Balance de clases: {np.sum(y==0)} puntuales vs {np.sum(y==1)} retrasados")
+        print(f"📊 Ratio de desbalance: {self.class_balance_ratio:.2f}")
+        
+        # Usar datos de validación externos si se proporcionan
+        if X_val is not None and y_val is not None:
+            X_train, y_train = X, y
+            X_test, y_test = X_val, y_val
+            print(f"\n📈 Datos de entrenamiento: {len(X_train):,} registros")
+            print(f"📈 Datos de validación: {len(X_test):,} registros (externos)")
+        else:
+            # División tradicional (stratified)
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=test_size, random_state=self.random_state, stratify=y
+            )
+            print(f"\n📈 Datos de entrenamiento: {len(X_train):,} registros")
+            print(f"📈 Datos de prueba: {len(X_test):,} registros")
+        
+        # Obtener modelos
+        models = self.get_model_instances(self.class_balance_ratio)
+        
+        results = {}
+        
+        for name, model in models.items():
+            print(f"\n🔄 Entrenando {name}...")
+            
+            try:
+                # Entrenar
+                model.fit(X_train, y_train)
+                self.models[name] = model
+                
+                # Predecir
+                y_pred = model.predict(X_test)
+                y_proba = model.predict_proba(X_test)[:, 1]
+                
+                # Calcular métricas
+                metrics = self._calculate_metrics(y_test, y_pred, y_proba)
+                results[name] = metrics
+                
+                print(f"   ✅ Accuracy: {metrics['accuracy']:.4f}")
+                print(f"   ✅ F1-Score: {metrics['f1']:.4f}")
+                print(f"   ✅ Recall: {metrics['recall']:.4f}")
+                print(f"   ✅ Precision: {metrics['precision']:.4f}")
+                
+            except Exception as e:
+                print(f"   ❌ Error: {str(e)}")
+                results[name] = {'error': str(e)}
+        
+        self.metrics_history = results
+        
+        # Seleccionar mejor modelo
+        self._select_best_model(results)
+        
+        return results
+    
+    def _calculate_metrics(self, y_true: np.ndarray, y_pred: np.ndarray, 
+                          y_proba: np.ndarray) -> Dict[str, float]:
+        """
+        Calcula todas las métricas de evaluación.
+        """
+        metrics = {
+            'accuracy': accuracy_score(y_true, y_pred),
+            'precision': precision_score(y_true, y_pred, zero_division=0),
+            'recall': recall_score(y_true, y_pred, zero_division=0),
+            'f1': f1_score(y_true, y_pred, zero_division=0),
+            'roc_auc': roc_auc_score(y_true, y_proba),
+            'pr_auc': average_precision_score(y_true, y_proba),
+        }
+        
+        # Matriz de confusión
+        cm = confusion_matrix(y_true, y_pred)
+        metrics['confusion_matrix'] = cm.tolist()
+        metrics['true_negatives'] = int(cm[0, 0])
+        metrics['false_positives'] = int(cm[0, 1])
+        metrics['false_negatives'] = int(cm[1, 0])
+        metrics['true_positives'] = int(cm[1, 1])
+        
+        return metrics
+    
+    def _select_best_model(self, results: Dict[str, Dict], 
+                           primary_metric: str = 'f1') -> None:
+        """
+        Selecciona el mejor modelo basado en la métrica principal.
+        """
+        best_score = -1
+        best_name = ""
+        
+        for name, metrics in results.items():
+            if 'error' not in metrics:
+                score = metrics.get(primary_metric, 0)
+                if score > best_score:
+                    best_score = score
+                    best_name = name
+        
+        if best_name:
+            self.best_model = self.models[best_name]
+            self.best_model_name = best_name
+            print(f"\n🏆 Mejor modelo: {best_name} ({primary_metric}={best_score:.4f})")
+    
+    def optimize_threshold(self, X: pd.DataFrame, y: np.ndarray,
+                          min_recall: float = 0.4,
+                          min_precision: float = 0.35) -> float:
+        """
+        Optimiza el umbral de decisión para balancear precision y recall.
+        """
+        if self.best_model is None:
+            raise ValueError("No hay modelo entrenado. Llama train_and_compare primero.")
+        
+        y_proba = self.best_model.predict_proba(X)[:, 1]
+        
+        # Calcular precision-recall para diferentes umbrales
+        precision_vals, recall_vals, thresholds = precision_recall_curve(y, y_proba)
+        
+        # Encontrar umbral óptimo que cumpla restricciones
+        best_threshold = 0.5
+        best_f1 = 0
+        
+        for i, threshold in enumerate(thresholds):
+            if precision_vals[i] >= min_precision and recall_vals[i] >= min_recall:
+                f1 = 2 * (precision_vals[i] * recall_vals[i]) / (precision_vals[i] + recall_vals[i] + 1e-10)
+                if f1 > best_f1:
+                    best_f1 = f1
+                    best_threshold = threshold
+        
+        self.best_threshold = best_threshold
+        print(f"\n🎯 Umbral optimizado: {best_threshold:.4f}")
+        
+        # Recalcular métricas con nuevo umbral
+        y_pred_opt = (y_proba >= best_threshold).astype(int)
+        print(f"   Precision con umbral optimizado: {precision_score(y, y_pred_opt):.4f}")
+        print(f"   Recall con umbral optimizado: {recall_score(y, y_pred_opt):.4f}")
+        
+        return best_threshold
+    
+    def predict(self, X: pd.DataFrame, threshold: Optional[float] = None) -> np.ndarray:
+        """
+        Realiza predicción binaria.
+        """
+        if self.best_model is None:
+            raise ValueError("No hay modelo entrenado.")
+        
+        threshold = threshold or self.best_threshold
+        proba = self.predict_proba(X)
+        return (proba >= threshold).astype(int)
+    
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        """
+        Realiza predicción de probabilidad.
+        """
+        if self.best_model is None:
+            raise ValueError("No hay modelo entrenado.")
+        
+        return self.best_model.predict_proba(X)[:, 1]
+    
+    def get_feature_importance(self) -> pd.DataFrame:
+        """
+        Retorna la importancia de features del mejor modelo.
+        """
+        if self.best_model is None:
+            raise ValueError("No hay modelo entrenado.")
+        
+        if hasattr(self.best_model, 'feature_importances_'):
+            importance = self.best_model.feature_importances_
+        elif hasattr(self.best_model, 'coef_'):
+            importance = np.abs(self.best_model.coef_[0])
+        else:
+            return pd.DataFrame()
+        
+        df_importance = pd.DataFrame({
+            'feature': self.feature_names,
+            'importance': importance
+        }).sort_values('importance', ascending=False)
+        
+        return df_importance
+    
+    def save_model(self, model_path: str, metadata_path: str,
+                  metrics: Optional[Dict[str, float]] = None,
+                  metrics_source: str = "validation") -> None:
+        """
+        Guarda el modelo y metadata.
+        """
+        if self.best_model is None:
+            raise ValueError("No hay modelo para guardar.")
+        
+        # Guardar modelo
+        joblib.dump(self.best_model, model_path)
+        print(f"✅ Modelo guardado en: {model_path}")
+        
+        # Guardar metadata
+        metrics_payload = metrics if metrics is not None else self.metrics_history.get(self.best_model_name, {})
+        metadata = {
+            'model_name': self.best_model_name,
+            'threshold': self.best_threshold,
+            'feature_names': self.feature_names,
+            'class_balance_ratio': self.class_balance_ratio,
+            'metrics': metrics_payload,
+            'metrics_source': metrics_source,
+            'trained_at': datetime.now().isoformat(),
+            'random_state': self.random_state
+        }
+        
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2, default=str)
+        
+        print(f"✅ Metadata guardada en: {metadata_path}")
+    
+    @classmethod
+    def load_model(cls, model_path: str, metadata_path: str) -> 'FlightDelayModel':
+        """
+        Carga un modelo guardado.
+        """
+        instance = cls()
+        
+        # Cargar modelo
+        instance.best_model = joblib.load(model_path)
+        
+        # Cargar metadata
+        with open(metadata_path, 'r') as f:
+            metadata = json.load(f)
+        
+        instance.best_model_name = metadata['model_name']
+        instance.best_threshold = metadata['threshold']
+        instance.feature_names = metadata['feature_names']
+        instance.class_balance_ratio = metadata.get('class_balance_ratio', 1.0)
+        
+        return instance
 
 
-def train_model(
-    X_train: pd.DataFrame,
-    y_train: pd.Series
-) -> Tuple[xgb.XGBClassifier, StandardScaler, Dict]:
+class OutOfCoreXGBModel:
     """
-    Entrena el modelo completo con escalado de features.
-    
-    Args:
-        X_train: Features de entrenamiento
-        y_train: Target de entrenamiento
-    
-    Returns:
-        Tupla (modelo entrenado, scaler, encoders)
+    Wrapper para usar un Booster de XGBoost con una interfaz tipo sklearn.
+    Se serializa guardando el modelo en bytes para compatibilidad con joblib.
     """
-    logger.info("="*80)
-    logger.info("INICIANDO ENTRENAMIENTO DEL MODELO")
-    logger.info("="*80)
-    
-    # Obtener features finales
-    feature_cols = get_feature_columns()
-    
-    # Verificar que todas las features existen
-    missing_features = set(feature_cols) - set(X_train.columns)
-    if missing_features:
-        logger.error(f"Features faltantes: {missing_features}")
-        raise ValueError(f"Features faltantes en X_train: {missing_features}")
-    
-    X_train_features = X_train[feature_cols].copy()
-    
-    # Rellenar NaNs restantes con 0
-    X_train_features = X_train_features.fillna(0)
-    
-    logger.info(f"Features para modelo: {len(feature_cols)}")
-    logger.info(f"Registros de entrenamiento: {len(X_train_features):,}")
-    
-    # Calcular scale_pos_weight si está configurado
-    if config.USE_SCALE_POS_WEIGHT:
-        n_negative = (y_train == 0).sum()
-        n_positive = (y_train == 1).sum()
-        scale_pos_weight = n_negative / n_positive
-        logger.info(f"Clases: Negativa={n_negative:,}, Positiva={n_positive:,}")
-        logger.info(f"Scale pos weight calculado: {scale_pos_weight:.2f}")
-    else:
-        scale_pos_weight = None
-    
-    # Crear modelo
-    model = create_model(scale_pos_weight)
-    
-    # Entrenar modelo
-    logger.info("Entrenando modelo...")
-    start_time = datetime.now()
-    
-    model.fit(X_train_features, y_train)
-    
-    end_time = datetime.now()
-    duration = (end_time - start_time).total_seconds()
-    logger.info(f"✓ Modelo entrenado en {duration:.1f} segundos")
-    
-    # Crear y fit scaler (para features numéricas)
-    logger.info("Creando escalador de features...")
-    scaler = StandardScaler()
-    numeric_features = [f for f in config.NUMERIC_FEATURES if f in feature_cols]
-    X_train_features[numeric_features] = scaler.fit_transform(X_train_features[numeric_features])
-    logger.info(f"✓ Scaler fitted para {len(numeric_features)} features numéricas")
-    
-    logger.info("="*80)
-    logger.info("ENTRENAMIENTO COMPLETADO")
-    logger.info("="*80)
-    
-    return model, scaler
+
+    def __init__(self, booster: Any, feature_names: List[str]):
+        self._booster = booster
+        self.feature_names = feature_names
+
+    def __getstate__(self) -> Dict[str, Any]:
+        return {
+            'booster_bytes': self._booster.save_raw(),
+            'feature_names': self.feature_names
+        }
+
+    def __setstate__(self, state: Dict[str, Any]) -> None:
+        self.feature_names = state['feature_names']
+        self._booster = xgb.Booster()
+        self._booster.load_model(state['booster_bytes'])
+
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        if isinstance(X, pd.DataFrame):
+            X_data = X[self.feature_names]
+        else:
+            X_data = X
+        dmatrix = xgb.DMatrix(X_data, feature_names=self.feature_names)
+        proba = self._booster.predict(dmatrix)
+        return np.vstack([1 - proba, proba]).T
+
+    def predict(self, X: pd.DataFrame, threshold: float = 0.5) -> np.ndarray:
+        proba = self.predict_proba(X)[:, 1]
+        return (proba >= threshold).astype(int)
 
 
-def save_model(
-    model: xgb.XGBClassifier,
-    scaler: StandardScaler,
-    train_metrics: Dict = None,
-    feature_columns: list = None
-):
+def cross_validate_model(model, X: pd.DataFrame, y: np.ndarray, 
+                         cv: int = 5) -> Dict[str, float]:
     """
-    Guarda el modelo, scaler y metadata.
-    
-    Args:
-        model: Modelo entrenado
-        scaler: Scaler fitted
-        train_metrics: Métricas de entrenamiento (opcional)
-        feature_columns: Lista de features (opcional)
+    Realiza validación cruzada estratificada.
     """
-    logger.info("Guardando modelo y artifacts...")
+    cv_strategy = StratifiedKFold(n_splits=cv, shuffle=True, random_state=42)
     
-    # Guardar modelo
-    joblib.dump(model, config.MODEL_PATH)
-    logger.info(f"✓ Modelo guardado en {config.MODEL_PATH}")
-    
-    # Guardar scaler
-    joblib.dump(scaler, config.SCALER_PATH)
-    logger.info(f"✓ Scaler guardado en {config.SCALER_PATH}")
-    
-    # Crear metadata
-    if feature_columns is None:
-        feature_columns = get_feature_columns()
-    
-    metadata = {
-        'model_type': config.MODEL_TYPE,
-        'model_version': '1.0',
-        'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'config': {
-            'delay_threshold': config.DELAY_THRESHOLD,
-            'classification_threshold': config.CLASSIFICATION_THRESHOLD,
-            'sample_size': config.SAMPLE_SIZE,
-            'test_size': config.TEST_SIZE,
-            'use_scale_pos_weight': config.USE_SCALE_POS_WEIGHT
-        },
-        'features': {
-            'total': len(feature_columns),
-            'numeric': len(config.NUMERIC_FEATURES),
-            'categorical': len(config.CATEGORICAL_FEATURES),
-            'columns': feature_columns
-        },
-        'xgboost_params': config.XGBOOST_PARAMS
+    scores = {
+        'accuracy': cross_val_score(model, X, y, cv=cv_strategy, scoring='accuracy'),
+        'f1': cross_val_score(model, X, y, cv=cv_strategy, scoring='f1'),
+        'precision': cross_val_score(model, X, y, cv=cv_strategy, scoring='precision'),
+        'recall': cross_val_score(model, X, y, cv=cv_strategy, scoring='recall'),
+        'roc_auc': cross_val_score(model, X, y, cv=cv_strategy, scoring='roc_auc'),
     }
     
-    if train_metrics:
-        metadata['train_metrics'] = train_metrics
-    
-    # Guardar metadata
-    with open(config.METADATA_PATH, 'w') as f:
-        json.dump(metadata, f, indent=2)
-    logger.info(f"✓ Metadata guardada en {config.METADATA_PATH}")
-
-
-def load_model() -> Tuple[xgb.XGBClassifier, StandardScaler, Dict]:
-    """
-    Carga el modelo, scaler y encoders guardados.
-    
-    Returns:
-        Tupla (modelo, scaler, encoders)
-    """
-    from .features import load_encoders
-    
-    logger.info("Cargando modelo y artifacts...")
-    
-    model = joblib.load(config.MODEL_PATH)
-    logger.info(f"✓ Modelo cargado desde {config.MODEL_PATH}")
-    
-    scaler = joblib.load(config.SCALER_PATH)
-    logger.info(f"✓ Scaler cargado desde {config.SCALER_PATH}")
-    
-    encoders = load_encoders()
-    
-    return model, scaler, encoders
-
-
-def predict(
-    model: xgb.XGBClassifier,
-    scaler: StandardScaler,
-    X: pd.DataFrame,
-    threshold: float = None
-) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Realiza predicciones con el modelo.
-    
-    Args:
-        model: Modelo entrenado
-        scaler: Scaler fitted
-        X: Features de entrada
-        threshold: Umbral de clasificación (None = usar config)
-    
-    Returns:
-        Tupla (predicciones, probabilidades)
-    """
-    if threshold is None:
-        threshold = config.CLASSIFICATION_THRESHOLD
-    
-    # Obtener features y escalar
-    feature_cols = get_feature_columns()
-    X_features = X[feature_cols].copy().fillna(0)
-    
-    numeric_features = [f for f in config.NUMERIC_FEATURES if f in feature_cols]
-    X_features[numeric_features] = scaler.transform(X_features[numeric_features])
-    
-    # Predecir probabilidades
-    probabilities = model.predict_proba(X_features)[:, 1]
-    
-    # Aplicar threshold
-    predictions = (probabilities >= threshold).astype(int)
-    
-    return predictions, probabilities
-
-
-if __name__ == '__main__':
-    # Pipeline completo de entrenamiento
-    logger.info("INICIANDO PIPELINE COMPLETO DE ENTRENAMIENTO")
-    
-    # 1. Preprocesar datos
-    df = preprocess_pipeline()
-    
-    # 2. Feature engineering
-    df_fe, encoders = feature_engineering_pipeline(df)
-    save_encoders(encoders)
-    
-    # 3. Split
-    X_train, X_test, y_train, y_test = split_data(df_fe)
-    
-    # 4. Entrenar modelo
-    model, scaler = train_model(X_train, y_train)
-    
-    # 5. Evaluar
-    from .evaluation import evaluate_model
-    metrics = evaluate_model(model, scaler, X_test, y_test)
-    
-    # 6. Guardar
-    save_model(model, scaler, train_metrics=metrics)
-    
-    logger.info("\n✓ PIPELINE COMPLETADO EXITOSAMENTE")
+    return {k: {'mean': v.mean(), 'std': v.std()} for k, v in scores.items()}

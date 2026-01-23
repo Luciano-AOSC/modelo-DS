@@ -1,259 +1,297 @@
 """
-Módulo de ingeniería de features.
+FlightOnTime - Feature Engineering
+==================================
+Módulo para crear y transformar features del modelo de predicción.
+Todas las features son calculables 24 horas antes del vuelo.
 
-Crea features temporales, derivadas y codifica variables categóricas.
+Features utilizadas (17 total):
+- Temporales (6): year, month, day_of_week, day_of_month, dep_hour, sched_minute_of_day
+- Operación (3): op_unique_carrier, origin, dest (encoded)
+- Distancia (1): distance
+- Clima (5): temp, wind_spd, precip_1h, climate_severity_idx, dist_met_km
+- Geográficas (2): latitude, longitude
+
+Actualizado: 2026-01-12
 """
 
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import LabelEncoder
-from typing import Dict, Tuple
-import logging
-import joblib
-
-from . import config
-
-logging.basicConfig(level=config.LOG_LEVEL, format=config.LOG_FORMAT, datefmt=config.DATE_FORMAT)
-logger = logging.getLogger(__name__)
+from typing import List, Dict, Tuple, Optional
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+import warnings
+warnings.filterwarnings('ignore')
 
 
-def create_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
+class FlightFeatureEngineer:
     """
-    Crea features temporales a partir de la fecha.
-    
-    Args:
-        df: DataFrame con columna 'fl_date'
-    
-    Returns:
-        DataFrame con features temporales añadidas
+    Clase para ingeniería de features de vuelos.
+    Diseñada para ser reutilizable en entrenamiento y predicción.
     """
-    logger.info("Creando features temporales...")
     
-    df_fe = df.copy()
-    
-    # Convertir a datetime
-    df_fe['fl_date'] = pd.to_datetime(df_fe['fl_date'])
-    
-    # Extraer componentes temporales
-    df_fe['month'] = df_fe['fl_date'].dt.month
-    df_fe['quarter'] = df_fe['fl_date'].dt.quarter
-
-    if 'day_of_week' not in df_fe.columns or df_fe['day_of_week'].isna().any():
-        df_fe['day_of_week'] = df_fe['fl_date'].dt.dayofweek
-    if 'day_of_month' not in df_fe.columns or df_fe['day_of_month'].isna().any():
-        df_fe['day_of_month'] = df_fe['fl_date'].dt.day
-
-    df_fe['is_weekend'] = (df_fe['day_of_week'] >= 5).astype(int)
-    
-    # Hora de salida
-    df_fe['hour'] = df_fe['crs_dep_time'] // 100
-    
-    # Componentes ciclicas de hora (sin/cos para capturar circularidad)
-    df_fe['hour_sin'] = np.sin(2 * np.pi * df_fe['hour'] / 24)
-    df_fe['hour_cos'] = np.cos(2 * np.pi * df_fe['hour'] / 24)
-    
-    logger.info("  ✓ Features temporales creadas")
-    
-    return df_fe
-
-
-def categorize_time_of_day(hour: int) -> str:
-    """
-    Categoriza la hora del día.
-    
-    Args:
-        hour: Hora en formato 0-23
-    
-    Returns:
-        Categoría: 'morning', 'afternoon', 'evening', 'night'
-    """
-    if 5 <= hour < 12:
-        return 'morning'
-    elif 12 <= hour < 17:
-        return 'afternoon'
-    elif 17 <= hour < 21:
-        return 'evening'
-    else:
-        return 'night'
-
-
-def create_derived_features(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Crea features derivadas (diferencias, categorías, etc.).
-    
-    Args:
-        df: DataFrame con features base
-    
-    Returns:
-        DataFrame con features derivadas añadidas
-    """
-    logger.info("Creando features derivadas...")
-    
-    df_fe = df.copy()
-    
-    # Categoría de hora del día
-    df_fe['time_of_day'] = df_fe['hour'].apply(categorize_time_of_day)
-    
-    # Diferencias climáticas
-    df_fe['temp_diff'] = df_fe['dest_weather_tavg'] - df_fe['origin_weather_tavg']
-    df_fe['prcp_diff'] = df_fe['dest_weather_prcp'] - df_fe['origin_weather_prcp']
-    
-    # Categoría de distancia
-    df_fe['distance_category'] = pd.cut(
-        df_fe['distance'],
-        bins=[0, 500, 1000, 2000, 5000],
-        labels=['short', 'medium', 'long', 'very_long']
-    )
-    
-    logger.info("  ✓ Features derivadas creadas")
-    
-    return df_fe
-
-
-def encode_categorical_features(
-    df: pd.DataFrame,
-    encoders: Dict[str, LabelEncoder] = None,
-    fit: bool = True
-) -> Tuple[pd.DataFrame, Dict[str, LabelEncoder]]:
-    """
-    Codifica features categóricas usando LabelEncoder.
-    
-    Args:
-        df: DataFrame con features categóricas
-        encoders: Diccionario de encoders (si ya están fitted)
-        fit: Si True, fit los encoders. Si False, solo transform
-    
-    Returns:
-        Tupla (DataFrame con features codificadas, diccionario de encoders)
-    """
-    logger.info(f"Codificando features categóricas (fit={fit})...")
-    
-    df_encoded = df.copy()
-    
-    if encoders is None:
-        encoders = {}
-    
-    for col in config.CATEGORICAL_FEATURES:
-        if col not in df_encoded.columns:
-            logger.warning(f"  ⚠ Feature {col} no encontrada, saltando...")
-            continue
+    def __init__(self):
+        self.label_encoders: Dict[str, LabelEncoder] = {}
+        self.scaler: Optional[StandardScaler] = None
+        self.feature_names: List[str] = []
+        self.categorical_columns: List[str] = []
+        self.numerical_columns: List[str] = []
+        self.is_fitted = False
         
-        if fit:
-            # Crear y fit encoder
-            le = LabelEncoder()
-            df_encoded[f'{col}_encoded'] = le.fit_transform(df_encoded[col].astype(str))
-            encoders[col] = le
-            logger.info(f"  ✓ {col}: {len(le.classes_)} clases únicas")
-        else:
-            # Usar encoder existente
-            le = encoders[col]
-            # Manejar valores nuevos no vistos
-            df_encoded[f'{col}_encoded'] = df_encoded[col].astype(str).apply(
-                lambda x: le.transform([x])[0] if x in le.classes_ else -1
-            )
+    def normalize_column_names(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Normaliza nombres de columnas de mayúsculas a minúsculas.
+        """
+        column_mapping = {
+            'YEAR': 'year',
+            'MONTH': 'month',
+            'DAY_OF_MONTH': 'day_of_month',
+            'DAY_OF_WEEK': 'day_of_week',
+            'OP_UNIQUE_CARRIER': 'op_unique_carrier',
+            'ORIGIN': 'origin',
+            'DEST': 'dest',
+            'DISTANCE': 'distance',
+            'DEP_HOUR': 'dep_hour',
+            'LATITUDE': 'latitude',
+            'LONGITUDE': 'longitude',
+            'DIST_MET_KM': 'dist_met_km',
+            'TEMP': 'temp',
+            'WIND_SPD': 'wind_spd',
+            'PRECIP_1H': 'precip_1h',
+            'CLIMATE_SEVERITY_IDX': 'climate_severity_idx',
+        }
+        
+        cols_to_rename = {k: v for k, v in column_mapping.items() if k in df.columns}
+        return df.rename(columns=cols_to_rename)
     
-    return df_encoded, encoders
+    def clean_precipitation(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Limpia valores de precipitación: -1 → 0
+        """
+        if 'precip_1h' in df.columns:
+            df['precip_1h'] = df['precip_1h'].replace(-1, 0)
+        return df
+        
+    def create_temporal_features(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Crea features temporales derivadas de la fecha/hora.
+        Todas calculables 24h antes del vuelo.
+        """
+        df = df.copy()
+        
+        # Convertir fecha si es necesario
+        if 'fl_date' in df.columns and not pd.api.types.is_datetime64_any_dtype(df['fl_date']):
+            df['fl_date'] = pd.to_datetime(df['fl_date'])
+        
+        # Features de fecha (disponibles 24h antes)
+        if 'fl_date' in df.columns:
+            df['year'] = df['fl_date'].dt.year
+            df['month'] = df['fl_date'].dt.month
+            df['day_of_month'] = df['fl_date'].dt.day
+            df['day_of_week'] = df['fl_date'].dt.dayofweek + 1  # 1=Lunes, 7=Domingo
+        
+        # Hora del día (de la hora programada de salida)
+        if 'crs_dep_time' in df.columns:
+            # crs_dep_time está en formato HHMM (ej: 1430 = 14:30)
+            df['dep_hour'] = (df['crs_dep_time'] // 100).astype(int)
+            df['dep_minute'] = (df['crs_dep_time'] % 100).astype(int)
+            df['sched_minute_of_day'] = df['dep_hour'] * 60 + df['dep_minute']
+        
+        return df
+    
+    def fit_encoders(self, df: pd.DataFrame, categorical_cols: List[str]) -> None:
+        """
+        Ajusta los encoders para las columnas categóricas.
+        """
+        self.categorical_columns = categorical_cols
+        
+        for col in categorical_cols:
+            if col in df.columns:
+                le = LabelEncoder()
+                # Incluir valor 'unknown' para manejar categorías nuevas
+                unique_vals = df[col].astype(str).unique().tolist()
+                unique_vals.append('__unknown__')
+                le.fit(unique_vals)
+                self.label_encoders[col] = le
+    
+    def transform_categorical(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Transforma columnas categóricas a numéricas usando los encoders ajustados.
+        """
+        df = df.copy()
+        
+        for col, le in self.label_encoders.items():
+            if col in df.columns:
+                # Reemplazar valores desconocidos con '__unknown__'
+                df[col] = df[col].astype(str).apply(
+                    lambda x: x if x in le.classes_ else '__unknown__'
+                )
+                df[col + '_encoded'] = le.transform(df[col])
+        
+        return df
+    
+    def create_target_variable(self, df: pd.DataFrame, 
+                                delay_column: str = 'dep_delay',
+                                threshold_minutes: int = 15) -> pd.DataFrame:
+        """
+        Crea la variable objetivo binaria (is_delayed).
+        Un vuelo se considera retrasado si el retraso >= threshold_minutes.
+        """
+        df = df.copy()
+        
+        # Si ya existe DEP_DEL15, usarlo directamente
+        if 'DEP_DEL15' in df.columns:
+            df['is_delayed'] = df['DEP_DEL15'].fillna(0).astype(int)
+        elif delay_column in df.columns:
+            df['is_delayed'] = (df[delay_column] >= threshold_minutes).astype(int)
+        
+        return df
+    
+    def get_feature_list(self) -> Dict[str, List[str]]:
+        """
+        Retorna la lista de features organizadas por categoría.
+        """
+        return {
+            'temporal': ['year', 'month', 'day_of_week', 'day_of_month', 
+                        'dep_hour', 'sched_minute_of_day'],
+            'operation': ['op_unique_carrier_encoded', 'origin_encoded', 'dest_encoded'],
+            'distance': ['distance'],
+            'climate': ['temp', 'wind_spd', 'precip_1h', 'climate_severity_idx', 'dist_met_km'],
+            'geo': ['latitude', 'longitude'],
+        }
+    
+    def get_all_features(self) -> List[str]:
+        """
+        Retorna lista plana de todas las features.
+        """
+        feature_dict = self.get_feature_list()
+        all_features = []
+        for category_features in feature_dict.values():
+            all_features.extend(category_features)
+        return all_features
+    
+    def fit_transform(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
+        """
+        Pipeline completo: normalizar, limpiar y codificar.
+        """
+        # Normalizar nombres
+        df = self.normalize_column_names(df)
+        
+        # Limpiar precipitación
+        df = self.clean_precipitation(df)
+        
+        # Codificar categóricas
+        categorical_cols = ['op_unique_carrier', 'origin', 'dest']
+        categorical_cols = [c for c in categorical_cols if c in df.columns]
+        
+        self.fit_encoders(df, categorical_cols)
+        df = self.transform_categorical(df)
+        
+        self.is_fitted = True
+        
+        # Retornar features
+        feature_cols = self.get_all_features()
+        feature_cols = [f for f in feature_cols if f in df.columns]
+        
+        return df, feature_cols
+    
+    def transform(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
+        """
+        Transforma un nuevo DataFrame usando los transformers ajustados.
+        """
+        if not self.is_fitted:
+            raise ValueError("FeatureEngineer no ha sido ajustado. Llama fit_transform primero.")
+        
+        # Normalizar nombres
+        df = self.normalize_column_names(df)
+        
+        # Limpiar precipitación
+        df = self.clean_precipitation(df)
+        
+        # Transformar categóricas
+        df = self.transform_categorical(df)
+        
+        # Retornar features
+        feature_cols = self.get_all_features()
+        feature_cols = [f for f in feature_cols if f in df.columns]
+        
+        return df, feature_cols
 
 
-def feature_engineering_pipeline(
-    df: pd.DataFrame,
-    encoders: Dict[str, LabelEncoder] = None,
-    fit_encoders: bool = True
-) -> Tuple[pd.DataFrame, Dict[str, LabelEncoder]]:
+def get_features_for_model() -> List[str]:
     """
-    Pipeline completo de feature engineering.
-    
-    Args:
-        df: DataFrame preprocesado
-        encoders: Encoders existentes (opcional)
-        fit_encoders: Si se deben fit los encoders
-    
-    Returns:
-        Tupla (DataFrame con features, diccionario de encoders)
+    Retorna la lista de features a usar en el modelo.
     """
-    logger.info("="*80)
-    logger.info("INICIANDO FEATURE ENGINEERING")
-    logger.info("="*80)
-    
-    # 1. Features temporales
-    df_fe = create_temporal_features(df)
-    
-    # 2. Features derivadas
-    df_fe = create_derived_features(df_fe)
-    
-    # 3. Codificar categóricas
-    df_fe, encoders = encode_categorical_features(df_fe, encoders, fit=fit_encoders)
-    
-    logger.info("="*80)
-    logger.info(f"FEATURE ENGINEERING COMPLETADO: {df_fe.shape[1]} columnas totales")
-    logger.info("=" *80)
-    
-    return df_fe, encoders
+    return [
+        # Temporales
+        'year', 'month', 'day_of_week', 'day_of_month', 
+        'dep_hour', 'sched_minute_of_day',
+        # Distancia
+        'distance',
+        # Clima
+        'temp', 'wind_spd', 'precip_1h', 'climate_severity_idx', 'dist_met_km',
+        # Geográficas
+        'latitude', 'longitude',
+        # Operación (encoded)
+        'op_unique_carrier_encoded', 'origin_encoded', 'dest_encoded',
+    ]
 
 
-def get_feature_columns() -> list:
+def get_excluded_features() -> List[str]:
     """
-    Retorna la lista de features finales para el modelo.
-    
-    Returns:
-        Lista de nombres de columnas
+    Retorna la lista de features excluidas para evitar leakage.
     """
-    # Features numéricas
-    numeric = config.NUMERIC_FEATURES.copy()
-    
-    # Features categóricas codificadas
-    categorical_encoded = [f'{col}_encoded' for col in config.CATEGORICAL_FEATURES]
-    
-    # Todas las features
-    all_features = numeric + categorical_encoded
-    
-    return all_features
+    return [
+        'DEP_DEL15',      # Target
+        'DEP_DELAY',      # Contiene respuesta (leakage)
+        'STATION_KEY',    # Llave técnica
+        'FL_DATE',        # Alta cardinalidad
+        'is_delayed',     # Target derivado
+    ]
 
 
-def save_encoders(encoders: Dict[str, LabelEncoder], file_path: str = None):
+def prepare_input_from_api(input_data: Dict) -> pd.DataFrame:
     """
-    Guarda los encoders en disco.
+    Prepara los datos de entrada del API para predicción.
+    Convierte el formato del contrato al formato del modelo.
     
-    Args:
-        encoders: Diccionario de encoders
-        file_path: Ruta donde guardar (None = usar config)
+    Input esperado:
+    {
+        "aerolinea": "AA",
+        "origen": "JFK",
+        "destino": "LAX",
+        "fecha_partida": "2025-03-15T14:30:00",
+        "distancia_km": 3983
+    }
     """
-    if file_path is None:
-        file_path = config.ENCODERS_PATH
+    from datetime import datetime
     
-    joblib.dump(encoders, file_path)
-    logger.info(f"✓ Encoders guardados en {file_path}")
+    # Parsear fecha
+    fecha = datetime.fromisoformat(input_data['fecha_partida'])
 
+    # Convertir distancia de km a millas (modelo espera millas)
+    distance_km = input_data['distancia_km']
+    distance_miles = distance_km * 0.621371
 
-def load_encoders(file_path: str = None) -> Dict[str, LabelEncoder]:
-    """
-    Carga los encoders desde disco.
     
-    Args:
-        file_path: Ruta de donde cargar (None = usar config)
+    # Crear DataFrame con formato del modelo
+    df = pd.DataFrame([{
+        'year': fecha.year,
+        'month': fecha.month,
+        'day_of_month': fecha.day,
+        'day_of_week': fecha.isoweekday(),  # 1=Lunes, 7=Domingo
+        'dep_hour': fecha.hour,
+        'sched_minute_of_day': fecha.hour * 60 + fecha.minute,
+        'op_unique_carrier': input_data['aerolinea'],
+        'origin': input_data['origen'],
+        'dest': input_data['destino'],
+        'distance': distance_miles,
+        # Valores por defecto para clima (si no vienen del API)
+        'temp': input_data.get('temp', input_data.get('temperatura', 20.0)),
+        'wind_spd': input_data.get('wind_spd', input_data.get('velocidad_viento', 5.0)),
+        'precip_1h': input_data.get('precip_1h', input_data.get('precipitacion', 0.0)),
+        'climate_severity_idx': input_data.get('climate_severity_idx', 0.0),
+        'dist_met_km': input_data.get('dist_met_km', 10.0),
+        'latitude': input_data.get('latitude', 40.0),
+        'longitude': input_data.get('longitude', -74.0),
+    }])
     
-    Returns:
-        Diccionario de encoders
-    """
-    if file_path is None:
-        file_path = config.ENCODERS_PATH
-    
-    encoders = joblib.load(file_path)
-    logger.info(f"✓ Encoders cargados desde {file_path}")
-    
-    return encoders
-
-
-if __name__ == '__main__':
-    # Test del módulo
-    from src.preprocessing import preprocess_pipeline
-    
-    df = preprocess_pipeline()
-    df_fe, encoders = feature_engineering_pipeline(df)
-    
-    features = get_feature_columns()
-    
-    print("\n✓ Feature engineering exitoso")
-    print(f"  Features totales: {len(features)}")
-    print(f"  Features numéricas: {len(config.NUMERIC_FEATURES)}")
-    print(f"  Features categóricas: {len(config.CATEGORICAL_FEATURES)}")
+    return df
