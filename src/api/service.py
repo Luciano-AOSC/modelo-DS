@@ -160,7 +160,237 @@ def sanitize_payload(df: pd.DataFrame) -> pd.DataFrame:
     return df_clean
 
 
-def predict_from_payload(df: pd.DataFrame) -> Tuple[int, float]:
+def sanitize_payload(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Limpia valores fuera de rango antes de generar features.
+    """
+    df_clean = df.copy()
+    today = pd.Timestamp.today().normalize()
+    if "fl_date" not in df_clean.columns:
+        if {"year", "month", "day_of_month"}.issubset(df_clean.columns):
+            df_clean["fl_date"] = pd.to_datetime(
+                df_clean[["year", "month", "day_of_month"]].rename(
+                    columns={"day_of_month": "day"}
+                ),
+                errors="coerce",
+            )
+        else:
+            df_clean["fl_date"] = today
+    df_clean["fl_date"] = pd.to_datetime(df_clean["fl_date"], errors="coerce").fillna(today)
+
+    if "crs_dep_time" not in df_clean.columns:
+        if {"dep_hour", "sched_minute_of_day"}.issubset(df_clean.columns):
+            minutes = df_clean["sched_minute_of_day"] % 60
+            df_clean["crs_dep_time"] = (df_clean["dep_hour"] * 100) + minutes
+        elif "dep_hour" in df_clean.columns:
+            df_clean["crs_dep_time"] = df_clean["dep_hour"] * 100
+        else:
+            df_clean["crs_dep_time"] = 0
+    df_clean["crs_dep_time"] = df_clean["crs_dep_time"].fillna(0)
+    default_values = {
+        "temp": 20.0,
+        "wind_spd": 5.0,
+        "precip_1h": 0.0,
+        "climate_severity_idx": 0.0,
+        "dist_met_km": 10.0,
+        "latitude": 40.0,
+        "longitude": -74.0,
+    }
+    for key, value in default_values.items():
+        if key not in df_clean.columns:
+            df_clean[key] = value
+        else:
+            df_clean[key] = df_clean[key].fillna(value)
+    if "precip_1h" in df_clean.columns:
+        df_clean["precip_1h"] = df_clean["precip_1h"].clip(lower=0)
+
+    weather_defaults = {
+        "origin_weather_tavg": df_clean.get("temp", pd.Series(20.0, index=df_clean.index)),
+        "dest_weather_tavg": df_clean.get("temp", pd.Series(20.0, index=df_clean.index)),
+        "origin_weather_prcp": df_clean.get("precip_1h", pd.Series(0.0, index=df_clean.index)),
+        "dest_weather_prcp": df_clean.get("precip_1h", pd.Series(0.0, index=df_clean.index)),
+    }
+    for key, value in weather_defaults.items():
+        if key not in df_clean.columns:
+            df_clean[key] = value
+        else:
+            df_clean[key] = df_clean[key].fillna(value)
+    return df_clean
+
+    transformed = feature_engineer.transform(df)
+    if isinstance(transformed, pd.DataFrame):
+        return transformed
+    return pd.DataFrame(transformed, columns=feature_names)
+
+
+def sanitize_payload(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Limpia valores fuera de rango antes de generar features.
+    """
+    df_clean = df.copy()
+    today = pd.Timestamp.today().normalize()
+    if "fl_date" not in df_clean.columns:
+        if {"year", "month", "day_of_month"}.issubset(df_clean.columns):
+            df_clean["fl_date"] = pd.to_datetime(
+                df_clean[["year", "month", "day_of_month"]].rename(
+                    columns={"day_of_month": "day"}
+                ),
+                errors="coerce",
+            )
+        else:
+            df_clean["fl_date"] = today
+    df_clean["fl_date"] = pd.to_datetime(df_clean["fl_date"], errors="coerce").fillna(today)
+
+    if "crs_dep_time" not in df_clean.columns:
+        if {"dep_hour", "sched_minute_of_day"}.issubset(df_clean.columns):
+            minutes = df_clean["sched_minute_of_day"] % 60
+            df_clean["crs_dep_time"] = (df_clean["dep_hour"] * 100) + minutes
+        elif "dep_hour" in df_clean.columns:
+            df_clean["crs_dep_time"] = df_clean["dep_hour"] * 100
+        else:
+            df_clean["crs_dep_time"] = 0
+    df_clean["crs_dep_time"] = df_clean["crs_dep_time"].fillna(0)
+    default_values = {
+        "temp": 20.0,
+        "wind_spd": 5.0,
+        "precip_1h": 0.0,
+        "climate_severity_idx": 0.0,
+        "dist_met_km": 10.0,
+        "latitude": 40.0,
+        "longitude": -74.0,
+    }
+    for key, value in default_values.items():
+        if key not in df_clean.columns:
+            df_clean[key] = value
+        else:
+            df_clean[key] = df_clean[key].fillna(value)
+    if "precip_1h" in df_clean.columns:
+        df_clean["precip_1h"] = df_clean["precip_1h"].clip(lower=0)
+
+    weather_defaults = {
+        "origin_weather_tavg": df_clean.get("temp", pd.Series(20.0, index=df_clean.index)),
+        "dest_weather_tavg": df_clean.get("temp", pd.Series(20.0, index=df_clean.index)),
+        "origin_weather_prcp": df_clean.get("precip_1h", pd.Series(0.0, index=df_clean.index)),
+        "dest_weather_prcp": df_clean.get("precip_1h", pd.Series(0.0, index=df_clean.index)),
+    }
+    for key, value in weather_defaults.items():
+        if key not in df_clean.columns:
+            df_clean[key] = value
+        else:
+            df_clean[key] = df_clean[key].fillna(value)
+    return df_clean
+
+    transformed = feature_engineer.transform(df)
+    if isinstance(transformed, pd.DataFrame):
+        return transformed
+    return pd.DataFrame(transformed, columns=feature_names)
+
+
+def sanitize_payload(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Limpia valores fuera de rango antes de generar features.
+    """
+    df_clean = df.copy()
+    today = pd.Timestamp.today().normalize()
+    if "fl_date" not in df_clean.columns:
+        if {"year", "month", "day_of_month"}.issubset(df_clean.columns):
+            df_clean["fl_date"] = pd.to_datetime(
+                df_clean[["year", "month", "day_of_month"]].rename(
+                    columns={"day_of_month": "day"}
+                ),
+                errors="coerce",
+            )
+        else:
+            df_clean["fl_date"] = today
+    df_clean["fl_date"] = pd.to_datetime(df_clean["fl_date"], errors="coerce").fillna(today)
+
+    if "crs_dep_time" not in df_clean.columns:
+        if {"dep_hour", "sched_minute_of_day"}.issubset(df_clean.columns):
+            minutes = df_clean["sched_minute_of_day"] % 60
+            df_clean["crs_dep_time"] = (df_clean["dep_hour"] * 100) + minutes
+        elif "dep_hour" in df_clean.columns:
+            df_clean["crs_dep_time"] = df_clean["dep_hour"] * 100
+        else:
+            df_clean["crs_dep_time"] = 0
+    df_clean["crs_dep_time"] = df_clean["crs_dep_time"].fillna(0)
+    default_values = {
+        "temp": 20.0,
+        "wind_spd": 5.0,
+        "precip_1h": 0.0,
+        "climate_severity_idx": 0.0,
+        "dist_met_km": 10.0,
+        "latitude": 40.0,
+        "longitude": -74.0,
+    }
+    for key, value in default_values.items():
+        if key not in df_clean.columns:
+            df_clean[key] = value
+        else:
+            df_clean[key] = df_clean[key].fillna(value)
+    if "precip_1h" in df_clean.columns:
+        df_clean["precip_1h"] = df_clean["precip_1h"].clip(lower=0)
+
+    weather_defaults = {
+        "origin_weather_tavg": df_clean.get("temp", pd.Series(20.0, index=df_clean.index)),
+        "dest_weather_tavg": df_clean.get("temp", pd.Series(20.0, index=df_clean.index)),
+        "origin_weather_prcp": df_clean.get("precip_1h", pd.Series(0.0, index=df_clean.index)),
+        "dest_weather_prcp": df_clean.get("precip_1h", pd.Series(0.0, index=df_clean.index)),
+    }
+    for key, value in weather_defaults.items():
+        if key not in df_clean.columns:
+            df_clean[key] = value
+        else:
+            df_clean[key] = df_clean[key].fillna(value)
+    return df_clean
+
+
+def sanitize_payload(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Limpia valores fuera de rango antes de generar features.
+    """
+    df_clean = df.copy()
+    today = pd.Timestamp.today().normalize()
+    if "fl_date" not in df_clean.columns:
+        if {"year", "month", "day_of_month"}.issubset(df_clean.columns):
+            df_clean["fl_date"] = pd.to_datetime(
+                df_clean[["year", "month", "day_of_month"]].rename(
+                    columns={"day_of_month": "day"}
+                ),
+                errors="coerce",
+            )
+        else:
+            df_clean["fl_date"] = today
+    df_clean["fl_date"] = pd.to_datetime(df_clean["fl_date"], errors="coerce").fillna(today)
+
+    if "crs_dep_time" not in df_clean.columns:
+        if {"dep_hour", "sched_minute_of_day"}.issubset(df_clean.columns):
+            minutes = df_clean["sched_minute_of_day"] % 60
+            df_clean["crs_dep_time"] = (df_clean["dep_hour"] * 100) + minutes
+        elif "dep_hour" in df_clean.columns:
+            df_clean["crs_dep_time"] = df_clean["dep_hour"] * 100
+        else:
+            df_clean["crs_dep_time"] = 0
+    df_clean["crs_dep_time"] = df_clean["crs_dep_time"].fillna(0)
+    default_values = {
+        "temp": 20.0,
+        "wind_spd": 5.0,
+        "precip_1h": 0.0,
+        "climate_severity_idx": 0.0,
+        "dist_met_km": 10.0,
+        "latitude": 40.0,
+        "longitude": -74.0,
+    }
+    for key, value in default_values.items():
+        if key not in df_clean.columns:
+            df_clean[key] = value
+        else:
+            df_clean[key] = df_clean[key].fillna(value)
+    if "precip_1h" in df_clean.columns:
+        df_clean["precip_1h"] = df_clean["precip_1h"].clip(lower=0)
+    return df_clean
+
+
+def predict_from_payload(df: pd.DataFrame) -> Tuple[int, float, float]:
     """
     Calcula predicción y probabilidad para un solo vuelo.
 
@@ -168,7 +398,7 @@ def predict_from_payload(df: pd.DataFrame) -> Tuple[int, float]:
         df: DataFrame con un solo vuelo.
 
     Returns:
-        (prediction, probability)
+        (prediction, probability, threshold)
     """
     df = sanitize_payload(df)
     validate_payload(df)
@@ -187,4 +417,4 @@ def predict_from_payload(df: pd.DataFrame) -> Tuple[int, float]:
     threshold = metadata.get("threshold", config.CLASSIFICATION_THRESHOLD)
     prediction = int(probability >= threshold)
 
-    return prediction, probability
+    return prediction, probability, float(threshold)
