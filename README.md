@@ -9,7 +9,7 @@ Se agregó una API HTTP para consumir el modelo entrenado, organizada con esquem
 1. Instalar dependencias:
 
 ```bash
-pip install -r requirements-runtime.md
+pip install -r requirements.txt
 ```
 
 2. Ejecutar el servidor (desde la raíz del repo):
@@ -26,29 +26,39 @@ Campos requeridos:
 
 ```json
 {
-  "aerolinea": "AA",
-  "origen": "JFK",
-  "destino": "LAX",
-  "fecha_partida": "2025-03-15T14:30:00",
-  "distancia_km": 3983,
-  "temp": 21.5,
-  "wind_spd": 4.2,
-  "precip_1h": 0.0,
-  "climate_severity_idx": 0.2,
-  "dist_met_km": 8.0,
-  "latitude": 40.64,
-  "longitude": -73.78
+  "flight": {
+    "op_unique_carrier": "AA",
+    "origin": "JFK",
+    "dest": "LAX",
+    "year": 2025,
+    "month": 3,
+    "day_of_week": 6,
+    "day_of_month": 15,
+    "dep_hour": 14,
+    "sched_minute_of_day": 870,
+    "distance": 2475,
+    "temp": 21.5,
+    "wind_spd": 15.3,
+    "precip_1h": 0.0,
+    "climate_severity_idx": 0.35,
+    "dist_met_km": 12.5,
+    "latitude": 40.6413,
+    "longitude": -73.7781
+  }
 }
 ```
+
+Notas:
+
+- Si no se envían valores climáticos/geográficos, se usan defaults: `temp=20.0`,
+  `wind_spd=5.0`, `precip_1h=0.0`, `climate_severity_idx=0.0`, `dist_met_km=10.0`,
+  `latitude=40.0`, `longitude=-74.0`.
 
 Respuesta:
 
 ```json
 {
   "prediction": 0,
-  "label": "Puntual",
-  "probability": 0.12,
-  "threshold": 0.5591,
-  "model_name": "XGBoost"
+  "probability": 0.12
 }
 ```
