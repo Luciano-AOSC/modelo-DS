@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional, Tuple
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 
+from src import config
 from src.features import *  # noqa: F403
 from src.features import feature_engineering_pipeline
 
@@ -59,7 +60,18 @@ class FlightFeatureEngineer:
         if "dest_weather_prcp" not in df.columns:
             df["dest_weather_prcp"] = df["precip_1h"]
 
-        features, _ = feature_engineering_pipeline(df, encoders=self.encoders, fit_encoders=False)
+        fit_encoders = False
+        if self.encoders is None:
+            fit_encoders = True
+        else:
+            for feature in config.CATEGORICAL_FEATURES:
+                if feature not in self.encoders:
+                    fit_encoders = True
+                    break
+
+        features, encoders = feature_engineering_pipeline(df, encoders=self.encoders, fit_encoders=fit_encoders)
+        if fit_encoders:
+            self.encoders = encoders
         return features
 
     def fit_transform(self, X: pd.DataFrame, y: Any = None) -> pd.DataFrame:
