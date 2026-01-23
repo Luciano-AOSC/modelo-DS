@@ -20,6 +20,8 @@ class OutOfCoreXGBModel(xgb.XGBClassifier):
             self.__dict__.update(state)
         if not hasattr(self, "objective"):
             self.objective = "binary:logistic"
+        if not hasattr(self, "verbosity"):
+            self.verbosity = 0
 
 
 __all__ = ["OutOfCoreXGBModel"] + [name for name in dir(_modeling) if not name.startswith("_")]
