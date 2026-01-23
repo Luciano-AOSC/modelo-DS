@@ -4,87 +4,52 @@ Lógica de negocio para la API.
 
 from functools import lru_cache
 from typing import Any, Dict, Tuple
+import json
 
 import joblib
 import pandas as pd
 from fastapi import HTTPException
 
 from .. import config
-from ..features import (
-    create_derived_features,
-    create_temporal_features,
-    encode_categorical_features,
-    get_feature_columns,
-)
+from ..features import get_feature_columns
 
 REQUIRED_COLUMNS = [
     "op_unique_carrier",
     "origin",
     "dest",
-    "crs_dep_time",
-    "fl_date",
+    "year",
+    "month",
+    "day_of_week",
+    "day_of_month",
+    "dep_hour",
+    "sched_minute_of_day",
     "distance",
-    "origin_weather_tavg",
-    "origin_weather_prcp",
-    "origin_weather_wspd",
-    "origin_weather_pres",
-    "dest_weather_tavg",
-    "dest_weather_prcp",
-    "dest_weather_wspd",
-    "dest_weather_pres",
+    "temp",
+    "wind_spd",
+    "precip_1h",
+    "climate_severity_idx",
+    "dist_met_km",
+    "latitude",
+    "longitude",
 ]
 
-ESTIMATED_SPEED_MPH = 500
 
-
-def estimate_crs_elapsed_time(distance: float) -> float:
-    """
-    Estima la duración programada del vuelo (minutos) a partir de la distancia.
-
-    Args:
-        distance: Distancia del vuelo en millas.
-
-    Returns:
-        Duración estimada en minutos.
-    """
-    return max((distance / ESTIMATED_SPEED_MPH) * 60, 1)
-
-
-def ensure_crs_elapsed_time(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Completa crs_elapsed_time cuando falta usando un estimado basado en la distancia.
-
-    Args:
-        df: DataFrame con un solo vuelo.
-
-    Returns:
-        DataFrame con crs_elapsed_time garantizado.
-    """
-    df_filled = df.copy()
-    if "crs_elapsed_time" not in df_filled.columns:
-        df_filled["crs_elapsed_time"] = df_filled["distance"].apply(estimate_crs_elapsed_time)
-    elif df_filled["crs_elapsed_time"].isnull().any():
-        df_filled["crs_elapsed_time"] = df_filled["crs_elapsed_time"].fillna(
-            df_filled["distance"].apply(estimate_crs_elapsed_time)
-        )
-    return df_filled
-
-
-# Tuple[Any, Any, Dict[str, Any]] = (modelo, scaler, encoders).
-# - Any: objeto cargado con joblib (modelo o scaler).
-# - Dict[str, Any]: diccionario de encoders por columna.
+# Tuple[Any, Any, Dict[str, Any]] = (modelo, feature_engineer, metadata).
+# - Any: objeto cargado con joblib (modelo o pipeline de features).
+# - Dict[str, Any]: metadata del modelo.
 @lru_cache(maxsize=1)
 def load_artifacts() -> Tuple[Any, Any, Dict[str, Any]]:
     """
-    Carga modelo, scaler y encoders desde disco.
+    Carga modelo, feature engineer y metadata desde disco.
 
     Retorna:
-        (model, scaler, encoders)
+        (model, feature_engineer, metadata)
     """
     model = joblib.load(config.MODEL_PATH)
-    scaler = joblib.load(config.SCALER_PATH)
-    encoders = joblib.load(config.ENCODERS_PATH)
-    return model, scaler, encoders
+    feature_engineer = joblib.load(config.FEATURE_ENGINEER_PATH)
+    with open(config.METADATA_PATH, "r", encoding="utf-8") as file:
+        metadata = json.load(file)
+    return model, feature_engineer, metadata
 
 
 def validate_payload(df: pd.DataFrame) -> None:
@@ -109,21 +74,68 @@ def validate_payload(df: pd.DataFrame) -> None:
         )
 
 
-def build_features(df: pd.DataFrame, encoders: Dict[str, Any]) -> pd.DataFrame:
+def build_features(
+    df: pd.DataFrame,
+    feature_engineer: Any,
+    feature_names: list,
+) -> pd.DataFrame:
     """
     Ejecuta el pipeline de features para inferencia.
 
     Args:
         df: DataFrame con el vuelo.
-        encoders: encoders entrenados para variables categóricas.
+        feature_engineer: pipeline entrenado para construir las features.
+        feature_names: lista ordenada de columnas esperadas por el modelo.
 
     Returns:
         DataFrame listo para escalar y predecir.
     """
-    df_features = create_temporal_features(df)
-    df_features = create_derived_features(df_features)
-    df_features, _ = encode_categorical_features(df_features, encoders, fit=False)
-    return df_features
+    if not hasattr(feature_engineer, "transform"):
+        raise HTTPException(
+            status_code=500,
+            detail="El feature engineer no soporta transform().",
+        )
+
+    transformed = feature_engineer.transform(df)
+    if isinstance(transformed, pd.DataFrame):
+        return transformed
+    return pd.DataFrame(transformed, columns=feature_names)
+
+
+def sanitize_payload(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Limpia valores fuera de rango antes de generar features.
+    """
+    df_clean = df.copy()
+    if "fl_date" not in df_clean.columns:
+        if {"year", "month", "day_of_month"}.issubset(df_clean.columns):
+            df_clean["fl_date"] = pd.to_datetime(
+                df_clean[["year", "month", "day_of_month"]].rename(
+                    columns={"day_of_month": "day"}
+                ),
+                errors="coerce",
+            )
+    if "crs_dep_time" not in df_clean.columns:
+        if {"dep_hour", "sched_minute_of_day"}.issubset(df_clean.columns):
+            minutes = df_clean["sched_minute_of_day"] % 60
+            df_clean["crs_dep_time"] = (df_clean["dep_hour"] * 100) + minutes
+    default_values = {
+        "temp": 20.0,
+        "wind_spd": 5.0,
+        "precip_1h": 0.0,
+        "climate_severity_idx": 0.0,
+        "dist_met_km": 10.0,
+        "latitude": 40.0,
+        "longitude": -74.0,
+    }
+    for key, value in default_values.items():
+        if key not in df_clean.columns:
+            df_clean[key] = value
+        else:
+            df_clean[key] = df_clean[key].fillna(value)
+    if "precip_1h" in df_clean.columns:
+        df_clean["precip_1h"] = df_clean["precip_1h"].clip(lower=0)
+    return df_clean
 
 
 def predict_from_payload(df: pd.DataFrame) -> Tuple[int, float]:
@@ -136,12 +148,11 @@ def predict_from_payload(df: pd.DataFrame) -> Tuple[int, float]:
     Returns:
         (prediction, probability)
     """
+    df = sanitize_payload(df)
     validate_payload(df)
-    df = ensure_crs_elapsed_time(df)
-    model, scaler, encoders = load_artifacts()
-    df_features = build_features(df, encoders)
-
-    feature_columns = get_feature_columns()
+    model, feature_engineer, metadata = load_artifacts()
+    feature_columns = metadata.get("feature_names", get_feature_columns())
+    df_features = build_features(df, feature_engineer, feature_columns)
     missing_feature_columns = [col for col in feature_columns if col not in df_features.columns]
     if missing_feature_columns:
         raise HTTPException(
@@ -150,9 +161,8 @@ def predict_from_payload(df: pd.DataFrame) -> Tuple[int, float]:
         )
 
     x_features = df_features[feature_columns].copy().fillna(0)
-    numeric_features = [f for f in config.NUMERIC_FEATURES if f in feature_columns]
-    x_features[numeric_features] = scaler.transform(x_features[numeric_features])
     probability = float(model.predict_proba(x_features)[0, 1])
-    prediction = int(probability >= config.CLASSIFICATION_THRESHOLD)
+    threshold = metadata.get("threshold", config.CLASSIFICATION_THRESHOLD)
+    prediction = int(probability >= threshold)
 
     return prediction, probability
