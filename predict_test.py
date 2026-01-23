@@ -26,9 +26,12 @@ def main() -> None:
         with open(model_path, "rb") as model_file:
             model = joblib.load(model_file)
     except ModuleNotFoundError as exc:
+        missing = getattr(exc, "name", "dependencias del modelo")
         raise SystemExit(
             "Falta instalar dependencias del modelo. "
-            "Ejecuta: pip install -r requirements.txt"
+            f"Módulo faltante: {missing}. "
+            "Ejecuta: pip install -r requirements.txt "
+            "y si sigue fallando instala: pip install xgboost lightgbm"
         ) from exc
 
     with open(feature_engineer_path, "rb") as fe_file:
