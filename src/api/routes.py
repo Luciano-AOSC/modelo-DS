@@ -39,7 +39,7 @@ def predict(request: PredictionRequest) -> PredictionResponse:
         PredictionResponse con predicción y probabilidad.
     """
     df = pd.DataFrame([request.flight.model_dump()])
-    prediction, probability = predict_from_payload(df)
+    prediction, probability, threshold = predict_from_payload(df)
 
     return PredictionResponse(
         prediction=prediction,
