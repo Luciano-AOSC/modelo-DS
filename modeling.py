@@ -15,6 +15,12 @@ class OutOfCoreXGBModel(xgb.XGBClassifier):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
 
+    def __setstate__(self, state: dict) -> None:
+        if isinstance(state, dict):
+            self.__dict__.update(state)
+        if not hasattr(self, "objective"):
+            self.objective = "binary:logistic"
+
 
 __all__ = ["OutOfCoreXGBModel"] + [name for name in dir(_modeling) if not name.startswith("_")]
 
