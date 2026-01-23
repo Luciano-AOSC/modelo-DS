@@ -23,7 +23,43 @@ class FlightFeatureEngineer:
         return self
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        features, _ = feature_engineering_pipeline(X, encoders=self.encoders, fit_encoders=False)
+        df = X.copy()
+        today = pd.Timestamp.today().normalize()
+        if "fl_date" not in df.columns:
+            if {"year", "month", "day_of_month"}.issubset(df.columns):
+                df["fl_date"] = pd.to_datetime(
+                    df[["year", "month", "day_of_month"]].rename(columns={"day_of_month": "day"}),
+                    errors="coerce",
+                )
+            else:
+                df["fl_date"] = today
+        df["fl_date"] = pd.to_datetime(df["fl_date"], errors="coerce").fillna(today)
+
+        if "crs_dep_time" not in df.columns:
+            if {"dep_hour", "sched_minute_of_day"}.issubset(df.columns):
+                minutes = df["sched_minute_of_day"] % 60
+                df["crs_dep_time"] = (df["dep_hour"] * 100) + minutes
+            elif "dep_hour" in df.columns:
+                df["crs_dep_time"] = df["dep_hour"] * 100
+            else:
+                df["crs_dep_time"] = 0
+        df["crs_dep_time"] = df["crs_dep_time"].fillna(0)
+
+        if "temp" not in df.columns:
+            df["temp"] = 20.0
+        if "precip_1h" not in df.columns:
+            df["precip_1h"] = 0.0
+
+        if "origin_weather_tavg" not in df.columns:
+            df["origin_weather_tavg"] = df["temp"]
+        if "dest_weather_tavg" not in df.columns:
+            df["dest_weather_tavg"] = df["temp"]
+        if "origin_weather_prcp" not in df.columns:
+            df["origin_weather_prcp"] = df["precip_1h"]
+        if "dest_weather_prcp" not in df.columns:
+            df["dest_weather_prcp"] = df["precip_1h"]
+
+        features, _ = feature_engineering_pipeline(df, encoders=self.encoders, fit_encoders=False)
         return features
 
     def fit_transform(self, X: pd.DataFrame, y: Any = None) -> pd.DataFrame:
