@@ -170,11 +170,13 @@ THRESHOLDS = {
 # ============================================================================
 
 MODEL_FILE = 'model.joblib'
+FEATURE_ENGINEER_FILE = 'feature_engineer.joblib'
 SCALER_FILE = 'scaler.pkl'
 ENCODERS_FILE = 'label_encoders.pkl'
 METADATA_FILE = 'metadata.json'
 
 MODEL_PATH = MODELS_DIR / MODEL_FILE
+FEATURE_ENGINEER_PATH = MODELS_DIR / FEATURE_ENGINEER_FILE
 SCALER_PATH = MODELS_DIR / SCALER_FILE
 ENCODERS_PATH = MODELS_DIR / ENCODERS_FILE
 METADATA_PATH = MODELS_DIR / METADATA_FILE
