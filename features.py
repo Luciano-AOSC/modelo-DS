@@ -32,6 +32,8 @@ class FlightFeatureEngineer:
 
     def __setstate__(self, state: Dict[str, Any]) -> None:
         self.__dict__.update(state)
+        if "encoders" not in self.__dict__:
+            self.encoders = None
 
 
 __all__ = ["FlightFeatureEngineer"] + [name for name in globals() if not name.startswith("_")]

@@ -149,6 +149,30 @@ def sanitize_payload(df: pd.DataFrame) -> pd.DataFrame:
         df_clean["precip_1h"] = df_clean["precip_1h"].clip(lower=0)
     return df_clean
 
+
+def sanitize_payload(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Limpia valores fuera de rango antes de generar features.
+    """
+    df_clean = df.copy()
+    default_values = {
+        "temp": 20.0,
+        "wind_spd": 5.0,
+        "precip_1h": 0.0,
+        "climate_severity_idx": 0.0,
+        "dist_met_km": 10.0,
+        "latitude": 40.0,
+        "longitude": -74.0,
+    }
+    for key, value in default_values.items():
+        if key not in df_clean.columns:
+            df_clean[key] = value
+        else:
+            df_clean[key] = df_clean[key].fillna(value)
+    if "precip_1h" in df_clean.columns:
+        df_clean["precip_1h"] = df_clean["precip_1h"].clip(lower=0)
+    return df_clean
+
     transformed = feature_engineer.transform(df)
     if isinstance(transformed, pd.DataFrame):
         return transformed
