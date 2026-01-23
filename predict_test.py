@@ -1,15 +1,37 @@
+import importlib.util
 import json
+from pathlib import Path
 
 import joblib
 
-from src.config import FEATURE_ENGINEER_PATH, MODEL_PATH
-from src.features import prepare_input_from_api
+
+def load_module(module_name: str, module_path: Path):
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"No se pudo cargar el módulo {module_name} desde {module_path}.")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def main() -> None:
-    with open(MODEL_PATH, "rb") as model_file:
-        model = joblib.load(model_file)
-    with open(FEATURE_ENGINEER_PATH, "rb") as fe_file:
+    project_root = Path(__file__).resolve().parent
+    config_module = load_module("config", project_root / "src" / "config.py")
+    features_module = load_module("features", project_root / "src" / "features.py")
+
+    model_path = Path(config_module.MODEL_PATH)
+    feature_engineer_path = Path(config_module.FEATURE_ENGINEER_PATH)
+
+    try:
+        with open(model_path, "rb") as model_file:
+            model = joblib.load(model_file)
+    except ModuleNotFoundError as exc:
+        raise SystemExit(
+            "Falta instalar dependencias del modelo. "
+            "Ejecuta: pip install -r requirements.txt"
+        ) from exc
+
+    with open(feature_engineer_path, "rb") as fe_file:
         feature_engineer = joblib.load(fe_file)
 
     input_payload = {
@@ -27,7 +49,7 @@ def main() -> None:
         "longitude": -73.78,
     }
 
-    df_input = prepare_input_from_api(input_payload)
+    df_input = features_module.prepare_input_from_api(input_payload)
     df_input, feature_cols = feature_engineer.transform(df_input)
 
     proba = model.predict_proba(df_input[feature_cols])[:, 1][0]
