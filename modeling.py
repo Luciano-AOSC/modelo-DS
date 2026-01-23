@@ -22,6 +22,8 @@ class OutOfCoreXGBModel(xgb.XGBClassifier):
             self.objective = "binary:logistic"
         if not hasattr(self, "verbosity"):
             self.verbosity = 0
+        if not hasattr(self, "booster"):
+            self.booster = "gbtree"
 
 
 __all__ = ["OutOfCoreXGBModel"] + [name for name in dir(_modeling) if not name.startswith("_")]
