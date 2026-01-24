@@ -1,27 +1,44 @@
-# Entornos virtuales
-envds/
-venv/
-.venv/
-.DS_Store
-
-# Python
+# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.Python
+
+# Virtual environments
+venv/
 env/
-pip-log.txt
-pip-delete-this-directory.txt
+.venv/
 
-# Jupyter/IPython
+# Jupyter Notebook checkpoints
 .ipynb_checkpoints/
-*.ipynb_checkpoints
 
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
 
-# Data grande (solo .gitkeep en raw/processed/)
-data/raw/
-data/raw/*.csv
-data/raw/*.parquet
-data/processed/*.csv
-data/processed/*.parquet
+# Data files (large)
+*.csv
+*.parquet
+!data/*.csv
+
+# Model files (can be large)
+*.pkl
+*.joblib
+!models/*.joblib
+
+# Environment variables
+.env
+.env.local
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
