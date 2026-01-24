@@ -1,0 +1,21 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONIOENCODING=utf-8
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+      - PYTHONIOENCODING=utf-8
+    restart: unless-stopped
